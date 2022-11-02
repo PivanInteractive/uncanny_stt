@@ -1,3 +1,7 @@
+# Uncanny STT
+## Live speech to text on a twitch stream, for use by and for Uncanny.gg
+### Combines VAD for uttererance detection and Whisper for stt application
+
 # whisper.cpp
 
 [![Actions Status](https://github.com/ggerganov/whisper.cpp/workflows/CI/badge.svg)](https://github.com/ggerganov/whisper.cpp/actions)

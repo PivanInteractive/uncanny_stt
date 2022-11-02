@@ -2,6 +2,19 @@
 ## Live speech to text on a twitch stream, for use by and for Uncanny.gg
 ### Combines VAD for uttererance detection and Whisper for stt application
 
+The purpose of this repo is to facilitate speech commands and highly reliable transcription on a twitch stream.
+
+OpenAI's Whisper is the most accurate open soucrce speech to text model to date, but was not meant for the streaming application. The model is hard coded to only accept 30 second audio segments.
+
+Whisper.cpp is a repo created to speed up inference of Whisper by implementation in the c++ language, however its stream example does not use VAD (voice activity detection) therefore it wastes a lot of computation on empty noise.
+
+VAD Detection detects "utterances" and can tell when a speaker starts and ends a phrase.
+
+If we combiene these two together, we can achieve a minimal computation high accuracy result. 
+
+
+
+
 # whisper.cpp
 
 [![Actions Status](https://github.com/ggerganov/whisper.cpp/workflows/CI/badge.svg)](https://github.com/ggerganov/whisper.cpp/actions)

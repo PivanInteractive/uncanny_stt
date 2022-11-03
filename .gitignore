@@ -20,3 +20,10 @@ compile_commands.json
 examples/whisper.objc/whisper.objc.xcodeproj/xcshareddata
 examples/whisper.objc/whisper.objc.xcodeproj/xcuserdata/
 examples/whisper.objc/whisper.objc.xcodeproj/project.xcworkspace/xcuserdata
+
+*.pbmm
+*.scorer
+*.onnx
+*.pth
+*.pt
+*.bin

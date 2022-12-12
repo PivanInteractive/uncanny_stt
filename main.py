@@ -3,11 +3,14 @@
 
 import io
 import os
+import re
+import time
 import socket
 import subprocess
 import numpy as np
 from utils import *
 from threading import Thread
+from datetime import datetime
 
 
 ## Init socket and buffer
@@ -43,56 +46,99 @@ def stream_stt(client):
         ## Generator for model input
         while True:
             grab_data(client,buffer)
-            yield buffer.read()
+            yield buffer.read(640)
 
     ## Mainloop
-    print("\n"*3,"Beginning VAD to WAV.","\n")
+    print("\n"*3,"Beginning Uncanny STT.","\n")
     
     while True:
-        ## Grab first packet for buffer
-        grab_data(client,buf)
-        
-        ## This loop should continue indefinitely
-        wav_data = bytearray()
-        frames = vad_audio.vad_collector(frames=frame_gen(client, buf))
-        for frame in frames:
-            if frame is not None:
-                wav_data.extend(frame)
-            else:
-                ## Write wav file of VAD
-                wav_fname = f"samples/{datetime.now().strftime("vad_%Y-%m-%d_%H-%M-%S_%f.wav")}"
-                vad_audio.write_wav(wav_fname, wav_data)
-                wav_data = bytearray()
+        try:
 
-                ## Run through whisper.cpp
-                cmd = [
-                    './main',
-                    '-nt',
-                    '-m','models/ggml-tiny.en.bin',
-                    '-f', wav_fname
-                ]
-                output = subprocess.run(cmd, capture_output=True)
-                text = output.stdout.decode("utf-8").strip().split(" ")
+            ## Grab first packet for buffer
+            grab_data(client,buf)
+            
+            ## This loop should continue indefinitely
+            wav_data = bytearray()
+            frames = vad_audio.vad_collector(frames=frame_gen(client, buf))
+            for frame in frames:
+                if frame is not None:
+                    wav_data.extend(frame)
+                else:
+                    start = time.time()
 
-                ## parse text
-                for i,word in enumerate(text):
-                    if word == "uncanny":
-                        if word[i+1] == "clip" and word[i+2] == "that":
-                            print("SD BROADCAST: Uncanny Clip That")
+                    ## Write wav file of VAD
+                    timestamp = datetime.now().strftime("vad_%Y-%m-%d_%H-%M-%S_%f.wav")
+                    wav_fname = f"samples/{timestamp}"
+                    vad_audio.write_wav(wav_fname, wav_data)
+                    wav_data = bytearray()
+                    #print(f"Saving utterance as {wav_fname}")
 
-                        if word[i+1] == "record" and word[i+2] == "this":
-                            print("SD BROADCAST: Uncanny Record This")
-                        
-                ## cleanup
-                os.remove(wav_fname)
-                buf.seek(0)
-                buf.truncate(0)
+                    ## Run through whisper.cpp
+                    cmd = [
+                        './main',
+                        '-nt',
+                        '-m','models/ggml-tiny.en.bin',
+                        '-f', wav_fname
+                    ]
+                    output = subprocess.run(cmd, capture_output=True)
+                    end = time.time()
+                    length = round(end-start,3)
 
-        #if buf.tell() > (3 * 16000 * 2): # 3 seconds of 16kHz samples at 16bit (2 bytes)
-        #    ## Reset buffer
-        #    #print(f"Buffer is full. {buf.tell()}")
-        #    buf.seek(0)
-        #    buf.truncate(0)
+                    rawtext = output.stdout.decode("utf-8").strip()
+
+                    if len(rawtext) > 2:
+                        print(f"{rawtext} {length}s")
+
+                    text = rawtext.lower()
+                    text = re.sub(r'[^\w\s]', '', text)
+
+                    if len(text) > 2:
+                        text = text.split(" ")
+                        for i,word in enumerate(text):
+                            if word in ['record','clip']:
+                                if text[i:] in ['this','that']:
+                                    print("SD BROADCAST: RECORD CLIP")
+
+
+                        '''
+                        ## Nobodys perfect. When screaming or talking fast, these mistake for uncanny
+                        ## Improved by using larger whisper model or slowing speech down before passing to model
+                        uncanny_mistakes = [
+                            "oh can he","on kenny", "oh kenny", 
+                            "and can you", "im kenny", "on any", 
+                            "unkenny", "im danny"
+                        ]
+                        for mistake in uncanny_mistakes:
+                            text = text.replace(mistake,"uncanny")
+
+                        #print(f"{text} {length}s")
+
+                        ## parse command
+                        text = text.split(" ")
+                        for i,word in enumerate(text):
+                            if word == "uncanny":
+                                if "clip" in text[i:]:
+                                    print("SD BROADCAST: Uncanny Clip (clip of last 10 sec)")
+
+                                if "record" in text[i:]:
+                                    print("SD BROADCAST: Uncanny Record (clip of next 10 sec)")
+
+                        '''
+                            
+                    ## cleanup
+                    os.remove(wav_fname)
+                    buf.seek(0)
+                    buf.truncate(0)
+
+            #if buf.tell() > (3 * 16000 * 2): # 3 seconds of 16kHz samples at 16bit (2 bytes)
+            #    ## Reset buffer
+            #    #print(f"Buffer is full. {buf.tell()}")
+            #    buf.seek(0)
+            #    buf.truncate(0)
+
+        except Exception as e:
+            print(e)
+            pass
 
 
 def main():

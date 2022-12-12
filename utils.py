@@ -7,7 +7,7 @@ import numpy as np
 
 
 class VADAudio(object):
-    def __init__(self, callback=None, device=None, input_rate=16000, file=None, aggressiveness=3):
+    def __init__(self, callback=None, device=None, input_rate=16000, file=None, aggressiveness=2):
            """Filter & segment audio with voice activity detection."""
  
            self.FORMAT = pyaudio.paInt16
@@ -71,7 +71,7 @@ class VADAudio(object):
         
         
     def write_wav(self, filename, data):
-           logging.info("write wav %s", filename)
+           #print(f"write wav {filename}")
            wf = wave.open(filename, 'wb')
            wf.setnchannels(self.CHANNELS)
            # wf.setsampwidth(self.pa.get_sample_size(FORMAT))
@@ -92,7 +92,7 @@ class VADAudio(object):
                yield self.read_resampled()
             
 
-    def vad_collector(self, padding_ms=300, ratio=0.75, frames=None):
+    def vad_collector(self, padding_ms=200, ratio=0.65, frames=None):
            """Generator that yields series of consecutive audio frames comprising each utterence, separated by yielding a single None.
                Determines voice activity by ratio of frames in padding_ms. Uses a buffer to include padding_ms prior to being triggered.
                Example: (frame, ..., frame, None, frame, ..., frame, None, ...)

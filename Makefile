@@ -27,8 +27,8 @@ endif
 # Compile flags
 #
 
-CFLAGS   = -I.              -O3 -std=c11  
-CXXFLAGS = -I. -I./examples -O3 -std=c++11
+CFLAGS   = -I.              -O3 -std=c11   -fPIC
+CXXFLAGS = -I. -I./examples -O3 -std=c++11 -fPIC
 LDFLAGS  =
 
 # OS specific
@@ -45,12 +45,62 @@ ifeq ($(UNAME_S),FreeBSD)
 	CFLAGS   += -pthread
 	CXXFLAGS += -pthread
 endif
+ifeq ($(UNAME_S),Haiku)
+	CFLAGS   += -pthread
+	CXXFLAGS += -pthread
+endif
 
 # Architecture specific
 # TODO: probably these flags need to be tweaked on some architectures
 #       feel free to update the Makefile for your architecture and send a pull request or issue
 ifeq ($(UNAME_M),x86_64)
-	CFLAGS += -mavx -mavx2 -mfma -mf16c
+	ifeq ($(UNAME_S),Darwin)
+		CFLAGS += -mfma -mf16c
+		AVX1_M := $(shell sysctl machdep.cpu.features)
+		ifneq (,$(findstring AVX1.0,$(AVX1_M)))
+			CFLAGS += -mavx
+		endif
+		AVX2_M := $(shell sysctl machdep.cpu.leaf7_features)
+		ifneq (,$(findstring AVX2,$(AVX2_M)))
+			CFLAGS += -mavx2
+		endif
+	else ifeq ($(UNAME_S),Linux)
+		AVX1_M := $(shell grep "avx " /proc/cpuinfo)
+		ifneq (,$(findstring avx,$(AVX1_M)))
+			CFLAGS += -mavx
+		endif
+		AVX2_M := $(shell grep "avx2 " /proc/cpuinfo)
+		ifneq (,$(findstring avx2,$(AVX2_M)))
+			CFLAGS += -mavx2
+		endif
+		FMA_M := $(shell grep "fma " /proc/cpuinfo)
+		ifneq (,$(findstring fma,$(FMA_M)))
+			CFLAGS += -mfma
+		endif
+		F16C_M := $(shell grep "f16c " /proc/cpuinfo)
+		ifneq (,$(findstring f16c,$(F16C_M)))
+			CFLAGS += -mf16c
+		endif
+	else ifeq ($(UNAME_S),Haiku)
+		AVX1_M := $(shell sysinfo -cpu | grep "AVX ")
+		ifneq (,$(findstring avx,$(AVX1_M)))
+			CFLAGS += -mavx
+		endif
+		AVX2_M := $(shell sysinfo -cpu | grep "AVX2 ")
+		ifneq (,$(findstring avx2,$(AVX2_M)))
+			CFLAGS += -mavx2
+		endif
+		FMA_M := $(shell sysinfo -cpu | grep "FMA ")
+		ifneq (,$(findstring fma,$(FMA_M)))
+			CFLAGS += -mfma
+		endif
+		F16C_M := $(shell sysinfo -cpu | grep "F16C ")
+		ifneq (,$(findstring f16c,$(F16C_M)))
+			CFLAGS += -mf16c
+		endif
+	else
+		CFLAGS += -mfma -mf16c -mavx -mavx2
+	endif
 endif
 ifeq ($(UNAME_M),amd64)
 	CFLAGS += -mavx -mavx2 -mfma -mf16c
@@ -61,6 +111,14 @@ ifndef WHISPER_NO_ACCELERATE
 		CFLAGS  += -DGGML_USE_ACCELERATE
 		LDFLAGS += -framework Accelerate
 	endif
+endif
+ifdef WHISPER_OPENBLAS
+	CFLAGS  += -DGGML_USE_OPENBLAS -I/usr/local/include/openblas
+	LDFLAGS += -lopenblas
+endif
+ifdef WHISPER_GPROF
+	CFLAGS  += -pg
+	CXXFLAGS  += -pg
 endif
 ifneq ($(filter aarch64%,$(UNAME_M)),)
 endif
@@ -77,13 +135,11 @@ ifneq ($(filter armv8%,$(UNAME_M)),)
 	CFLAGS += -mfp16-format=ieee -mno-unaligned-access
 endif
 
-#
-# Build library + main
-#
+default: main
 
-main: examples/main/main.cpp ggml.o whisper.o
-	$(CXX) $(CXXFLAGS) examples/main/main.cpp whisper.o ggml.o -o main $(LDFLAGS)
-	./main -h
+#
+# Build library
+#
 
 ggml.o: ggml.c ggml.h
 	$(CC)  $(CFLAGS)   -c ggml.c -o ggml.o
@@ -94,8 +150,11 @@ whisper.o: whisper.cpp whisper.h
 libwhisper.a: ggml.o whisper.o
 	$(AR) rcs libwhisper.a ggml.o whisper.o
 
+libwhisper.so: ggml.o whisper.o
+	$(CXX) $(CXXFLAGS) -shared -o libwhisper.so ggml.o whisper.o $(LDFLAGS)
+
 clean:
-	rm -f *.o main stream bench libwhisper.a
+	rm -f *.o main stream command talk bench libwhisper.a libwhisper.so
 
 #
 # Examples
@@ -103,8 +162,18 @@ clean:
 
 CC_SDL=`sdl2-config --cflags --libs`
 
+main: examples/main/main.cpp ggml.o whisper.o
+	$(CXX) $(CXXFLAGS) examples/main/main.cpp ggml.o whisper.o -o main $(LDFLAGS)
+	./main -h
+
 stream: examples/stream/stream.cpp ggml.o whisper.o
 	$(CXX) $(CXXFLAGS) examples/stream/stream.cpp ggml.o whisper.o -o stream $(CC_SDL) $(LDFLAGS)
+
+command: examples/command/command.cpp ggml.o whisper.o
+	$(CXX) $(CXXFLAGS) examples/command/command.cpp ggml.o whisper.o -o command $(CC_SDL) $(LDFLAGS)
+
+talk: examples/talk/talk.cpp  examples/talk/gpt-2.cpp ggml.o whisper.o
+	$(CXX) $(CXXFLAGS) examples/talk/talk.cpp examples/talk/gpt-2.cpp ggml.o whisper.o -o talk $(CC_SDL) $(LDFLAGS)
 
 bench: examples/bench/bench.cpp ggml.o whisper.o
 	$(CXX) $(CXXFLAGS) examples/bench/bench.cpp ggml.o whisper.o -o bench $(LDFLAGS)
@@ -144,9 +213,10 @@ samples:
 .PHONY: small
 .PHONY: medium.en
 .PHONY: medium
+.PHONY: large-v1
 .PHONY: large
 
-tiny.en tiny base.en base small.en small medium.en medium large: main
+tiny.en tiny base.en base small.en small medium.en medium large-v1 large: main
 	bash ./models/download-ggml-model.sh $@
 	@echo ""
 	@echo "==============================================="
@@ -155,9 +225,17 @@ tiny.en tiny base.en base small.en small medium.en medium large: main
 	@echo ""
 	@for f in samples/*.wav; do \
 		echo "----------------------------------------------" ; \
-		echo "[+] Running base.en on $$f ... (run 'ffplay $$f' to listen)" ; \
+		echo "[+] Running $@ on $$f ... (run 'ffplay $$f' to listen)" ; \
 	    echo "----------------------------------------------" ; \
 		echo "" ; \
 		./main -m models/ggml-$@.bin -f $$f ; \
 		echo "" ; \
 	done
+
+#
+# Tests
+#
+
+.PHONY: tests
+tests:
+	bash ./tests/run-tests.sh

@@ -1,5 +1,5 @@
 cmake_minimum_required (VERSION 3.0)
-project(whisper.cpp VERSION 1.0.0)
+project(whisper.cpp VERSION 1.0.3)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS "on")
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -9,6 +9,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
     set(WHISPER_STANDALONE ON)
     include(cmake/GitVars.cmake)
     include(cmake/BuildTypes.cmake)
+
+    # configure project version
+    if (EXISTS "${CMAKE_SOURCE_DIR}/bindings/ios/Makefile-tmpl")
+        configure_file(${CMAKE_SOURCE_DIR}/bindings/ios/Makefile-tmpl ${CMAKE_SOURCE_DIR}/bindings/ios/Makefile @ONLY)
+    endif()
+    configure_file(${CMAKE_SOURCE_DIR}/bindings/javascript/package-tmpl.json ${CMAKE_SOURCE_DIR}/bindings/javascript/package.json @ONLY)
 else()
     set(WHISPER_STANDALONE OFF)
 endif()
@@ -43,11 +49,13 @@ option(WHISPER_SUPPORT_SDL2            "whisper: support for libSDL2" OFF)
 
 if (APPLE)
     option(WHISPER_NO_ACCELERATE       "whisper: disable Accelerate framework" OFF)
+    option(WHISPER_NO_AVX              "whisper: disable AVX" OFF)
+    option(WHISPER_NO_AVX2             "whisper: disable AVX2" OFF)
 else()
     option(WHISPER_SUPPORT_OPENBLAS    "whisper: support for OpenBLAS" OFF)
 endif()
 
-option(WHISPER_PERF                    "whisper: enable perf timings"          OFF)
+option(WHISPER_PERF                    "whisper: enable perf timings" OFF)
 
 # sanitizers
 
@@ -74,7 +82,7 @@ endif()
 # dependencies
 
 set(CMAKE_C_STANDARD   11)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 11)
 
 find_package(Threads REQUIRED)
 
@@ -92,7 +100,9 @@ if (APPLE AND NOT WHISPER_NO_ACCELERATE)
 endif()
 
 if (WHISPER_SUPPORT_OPENBLAS)
-    find_library(OPENBLAS_LIB openblas)
+    find_library(OPENBLAS_LIB
+        NAMES openblas libopenblas
+        )
     if (OPENBLAS_LIB)
         message(STATUS "OpenBLAS found")
 
@@ -138,17 +148,26 @@ if (${CMAKE_SYSTEM_PROCESSOR} MATCHES "arm" OR ${CMAKE_SYSTEM_PROCESSOR} MATCHES
 else()
     message(STATUS "x86 detected")
     if (MSVC)
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} /arch:AVX2")
-        set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} /arch:AVX2")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /arch:AVX2")
+        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /arch:AVX2")
     else()
         if (EMSCRIPTEN)
-            # we require support for WASM SIMD 128-bit
-            set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -pthread -msimd128")
+            set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS}   -pthread")
             set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
         else()
-            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx -mavx2 -mfma -mf16c")
+            if(NOT WHISPER_NO_AVX)
+                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx")
+            endif()
+            if(NOT WHISPER_NO_AVX2)
+                set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mavx2")
+            endif()
+            set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -mfma -mf16c")
         endif()
     endif()
+endif()
+
+if (WHISPER_PERF)
+    set(WHISPER_EXTRA_FLAGS ${WHISPER_EXTRA_FLAGS} -DGGML_PERF)
 endif()
 
 #
@@ -184,6 +203,10 @@ if (BUILD_SHARED_LIBS)
         )
 endif()
 
+if (EMSCRIPTEN)
+    set_target_properties(${TARGET} PROPERTIES COMPILE_FLAGS "-msimd128")
+endif()
+
 target_compile_definitions(${TARGET} PUBLIC
     ${WHISPER_EXTRA_FLAGS}
     )
@@ -203,13 +226,11 @@ add_subdirectory(bindings)
 # programs, examples and tests
 #
 
-if (WHISPER_STANDALONE)
-    if (WHISPER_BUILD_TESTS)
-        enable_testing()
-        add_subdirectory(tests)
-    endif ()
-
-    if (WHISPER_BUILD_EXAMPLES)
-        add_subdirectory(examples)
-    endif()
+if (WHISPER_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif ()
+
+if (WHISPER_BUILD_EXAMPLES)
+    add_subdirectory(examples)
+endif()

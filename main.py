@@ -56,12 +56,15 @@ def stream_stt(client):
 
             ## Grab first packet for buffer
             grab_data(client,buf)
+
+            last_phrase = ""
+            last_command = 0
             
             ## This loop should continue indefinitely
             wav_data = bytearray()
             frames = vad_audio.vad_collector(frames=frame_gen(client, buf))
             for frame in frames:
-                if frame is not None:
+                if frame is not None and len(wav_data) < 80000:
                     wav_data.extend(frame)
                 else:
                     start = time.time()
@@ -89,46 +92,31 @@ def stream_stt(client):
                     if len(rawtext) > 2:
                         print(f"{rawtext} {length}s")
 
-                    text = rawtext.lower()
+                    newtext = last_phrase + " " + rawtext
+
+                    text = newtext.lower()
                     text = re.sub(r'[^\w\s]', '', text)
 
                     if len(text) > 2:
                         text = text.split(" ")
                         for i,word in enumerate(text):
                             if word in ['record','clip']:
-                                if text[i:] in ['this','that']:
-                                    print("SD BROADCAST: RECORD CLIP")
+                                if 'this' in text[i:] or 'that' in text[i:]:
+                                    dt = time.time() - last_command
+                                    if dt > 10:
+                                        print(">>> SD BROADCAST CLIP <<<")
+                                        last_command = time.time()
 
 
-                        '''
-                        ## Nobodys perfect. When screaming or talking fast, these mistake for uncanny
-                        ## Improved by using larger whisper model or slowing speech down before passing to model
-                        uncanny_mistakes = [
-                            "oh can he","on kenny", "oh kenny", 
-                            "and can you", "im kenny", "on any", 
-                            "unkenny", "im danny"
-                        ]
-                        for mistake in uncanny_mistakes:
-                            text = text.replace(mistake,"uncanny")
-
-                        #print(f"{text} {length}s")
-
-                        ## parse command
-                        text = text.split(" ")
-                        for i,word in enumerate(text):
-                            if word == "uncanny":
-                                if "clip" in text[i:]:
-                                    print("SD BROADCAST: Uncanny Clip (clip of last 10 sec)")
-
-                                if "record" in text[i:]:
-                                    print("SD BROADCAST: Uncanny Record (clip of next 10 sec)")
-
-                        '''
                             
                     ## cleanup
                     os.remove(wav_fname)
                     buf.seek(0)
                     buf.truncate(0)
+
+                    dt = time.time() - last_command
+                    if dt > 10:
+                        last_phrase = rawtext
 
             #if buf.tell() > (3 * 16000 * 2): # 3 seconds of 16kHz samples at 16bit (2 bytes)
             #    ## Reset buffer

@@ -12,9 +12,9 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     portaudio19-dev \
     ffmpeg \
-    libasound2 
+    libasound2
 
-RUN pip3 install PyAudio webrtcvad numpy
+RUN pip3 install PyAudio webrtcvad numpy tensorflow
 
 WORKDIR /src
 COPY . /src
